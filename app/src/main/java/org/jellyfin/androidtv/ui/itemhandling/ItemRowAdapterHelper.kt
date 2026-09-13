@@ -12,6 +12,7 @@ import org.jellyfin.androidtv.constant.LiveTvOption
 import org.jellyfin.androidtv.data.querying.GetAdditionalPartsRequest
 import org.jellyfin.androidtv.data.querying.GetSpecialsRequest
 import org.jellyfin.androidtv.data.querying.GetTrailersRequest
+import org.jellyfin.androidtv.data.repository.HomeSectionsRepository
 import org.jellyfin.androidtv.data.repository.UserViewsRepository
 import org.jellyfin.androidtv.ui.GridButton
 import org.jellyfin.androidtv.ui.browsing.BrowseGridFragment.SortOption
@@ -23,6 +24,7 @@ import org.jellyfin.sdk.api.client.extensions.liveTvApi
 import org.jellyfin.sdk.api.client.extensions.showApi
 import org.jellyfin.sdk.api.client.extensions.userViewApi
 import org.jellyfin.sdk.api.client.extensions.videoApi
+import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.ItemFilter
 import org.jellyfin.sdk.model.api.ItemSortBy
 import org.jellyfin.sdk.model.api.SeriesTimerInfoDto
@@ -88,6 +90,44 @@ fun ItemRowAdapter.retrieveResumeItems(api: ApiClient, query: GetResumeItemsRequ
 			)
 
 			if (response.items.isEmpty()) removeRow()
+		}.fold(
+			onSuccess = { notifyRetrieveFinished() },
+			onFailure = { error -> notifyRetrieveFinished(error as? Exception) }
+		)
+	}
+}
+
+/**
+ * Fills the row with the items the server sent for its section. The row is removed when empty.
+ */
+fun ItemRowAdapter.setHomeSectionItems(items: List<BaseItemDto>) {
+	setTotalItems(items.size)
+	setItems(
+		items = items,
+		transform = { item, _ ->
+			BaseItemDtoBaseRowItem(
+				item,
+				preferParentThumb,
+				isStaticHeight,
+			)
+		}
+	)
+
+	if (items.isEmpty()) removeRow()
+}
+
+/**
+ * Refetches the whole home screen through the repository, which dedups concurrent rows, and
+ * picks this row out by id.
+ */
+fun ItemRowAdapter.retrieveHomeSection(repository: HomeSectionsRepository, sectionId: String) {
+	ProcessLifecycleOwner.get().lifecycleScope.launch {
+		runCatching {
+			val items = withContext(Dispatchers.IO) {
+				repository.getSections().firstOrNull { it.id == sectionId }?.items.orEmpty()
+			}
+
+			setHomeSectionItems(items)
 		}.fold(
 			onSuccess = { notifyRetrieveFinished() },
 			onFailure = { error -> notifyRetrieveFinished(error as? Exception) }

@@ -24,6 +24,7 @@ import org.jellyfin.androidtv.data.querying.GetSeriesTimersRequest;
 import org.jellyfin.androidtv.data.querying.GetSpecialsRequest;
 import org.jellyfin.androidtv.data.querying.GetTrailersRequest;
 import org.jellyfin.androidtv.data.querying.GetUserViewsRequest;
+import org.jellyfin.androidtv.data.repository.HomeSectionsRepository;
 import org.jellyfin.androidtv.data.repository.UserViewsRepository;
 import org.jellyfin.androidtv.ui.GridButton;
 import org.jellyfin.androidtv.ui.browsing.BrowseGridFragment;
@@ -34,6 +35,7 @@ import org.jellyfin.androidtv.util.Utils;
 import org.jellyfin.androidtv.util.apiclient.EmptyResponse;
 import org.jellyfin.sdk.model.api.BaseItemDto;
 import org.jellyfin.sdk.model.api.BaseItemPerson;
+import org.jellyfin.sdk.model.api.HomeSectionDto;
 import org.jellyfin.sdk.model.api.ItemSortBy;
 import org.jellyfin.sdk.model.api.SortOrder;
 import org.jellyfin.sdk.model.api.request.GetAlbumArtistsRequest;
@@ -72,6 +74,7 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
     private GetAlbumArtistsRequest mAlbumArtistsQuery;
     private GetLatestMediaRequest mLatestQuery;
     private GetResumeItemsRequest resumeQuery;
+    private HomeSectionDto homeSection;
     private QueryType queryType;
 
     private ItemSortBy mSortBy;
@@ -103,6 +106,7 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
 
     private final Lazy<org.jellyfin.sdk.api.client.ApiClient> api = inject(org.jellyfin.sdk.api.client.ApiClient.class);
     private final Lazy<UserViewsRepository> userViewsRepository = inject(UserViewsRepository.class);
+    private final Lazy<HomeSectionsRepository> homeSectionsRepository = inject(HomeSectionsRepository.class);
     private Context context;
 
     private boolean isCurrentlyRetrieving() {
@@ -127,6 +131,10 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
 
     public QueryType getQueryType() {
         return queryType;
+    }
+
+    public @Nullable HomeSectionDto getHomeSection() {
+        return homeSection;
     }
 
     public void setRow(ListRow row) {
@@ -345,6 +353,16 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
         this.preferParentThumb = preferParentThumb;
         this.staticHeight = staticHeight;
         this.queryType = QueryType.Resume;
+    }
+
+    public ItemRowAdapter(Context context, HomeSectionDto section, boolean preferParentThumb, boolean staticHeight, Presenter presenter, MutableObjectAdapter<Row> parent) {
+        super(presenter);
+        this.context = context;
+        mParent = parent;
+        homeSection = section;
+        this.preferParentThumb = preferParentThumb;
+        this.staticHeight = staticHeight;
+        queryType = QueryType.HomeSection;
     }
 
     public void setItemsLoaded(int itemsLoaded) {
@@ -649,6 +667,9 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
                 break;
             case Resume:
                 ItemRowAdapterHelperKt.retrieveResumeItems(this, api.getValue(), resumeQuery);
+                break;
+            case HomeSection:
+                ItemRowAdapterHelperKt.retrieveHomeSection(this, homeSectionsRepository.getValue(), homeSection.getId());
                 break;
         }
     }

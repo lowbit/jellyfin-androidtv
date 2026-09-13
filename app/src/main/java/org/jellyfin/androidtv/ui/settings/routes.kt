@@ -20,7 +20,11 @@ import org.jellyfin.androidtv.ui.settings.screen.customization.subtitle.Settings
 import org.jellyfin.androidtv.ui.settings.screen.customization.subtitle.SettingsSubtitlesBackgroundColorScreen
 import org.jellyfin.androidtv.ui.settings.screen.customization.subtitle.SettingsSubtitlesScreen
 import org.jellyfin.androidtv.ui.settings.screen.customization.subtitle.SettingsSubtitlesTextColorScreen
+import org.jellyfin.androidtv.ui.settings.screen.home.SettingsHomeResetScreen
 import org.jellyfin.androidtv.ui.settings.screen.home.SettingsHomeScreen
+import org.jellyfin.androidtv.ui.settings.screen.home.SettingsHomeSectionAddScreen
+import org.jellyfin.androidtv.ui.settings.screen.home.SettingsHomeSectionItemScreen
+import org.jellyfin.androidtv.ui.settings.screen.home.SettingsHomeSectionMaxItemsScreen
 import org.jellyfin.androidtv.ui.settings.screen.home.SettingsHomeSectionScreen
 import org.jellyfin.androidtv.ui.settings.screen.library.SettingsLibrariesDisplayGridScreen
 import org.jellyfin.androidtv.ui.settings.screen.library.SettingsLibrariesDisplayImageSizeScreen
@@ -86,6 +90,10 @@ object Routes {
 	const val LIBRARIES_DISPLAY_GRID = "/libraries/display/{itemId}/{displayPreferencesId}/grid"
 	const val HOME = "/home"
 	const val HOME_SECTION = "/home/section/{index}"
+	const val HOME_SECTION_MAX_ITEMS = "/home/section/{index}/max-items"
+	const val HOME_SECTION_ADD = "/home/add"
+	const val HOME_SECTION_ADD_ITEM = "/home/add/{key}"
+	const val HOME_RESET = "/home/reset"
 	const val LIVETV_GUIDE_FILTERS = "/livetv/guide/filters"
 	const val LIVETV_GUIDE_OPTIONS = "/livetv/guide/options"
 	const val LIVETV_GUIDE_CHANNEL_ORDER = "/livetv/guide/channel-order"
@@ -206,6 +214,18 @@ val routes = mapOf<String, RouteComposable>(
 	},
 	Routes.HOME_SECTION to { context ->
 		SettingsHomeSectionScreen(context.parameters["index"]?.toInt()!!)
+	},
+	Routes.HOME_SECTION_MAX_ITEMS to { context ->
+		SettingsHomeSectionMaxItemsScreen(context.parameters["index"]?.toInt()!!)
+	},
+	Routes.HOME_SECTION_ADD to {
+		SettingsHomeSectionAddScreen()
+	},
+	Routes.HOME_SECTION_ADD_ITEM to { context ->
+		SettingsHomeSectionItemScreen(context.parameters["key"]!!)
+	},
+	Routes.HOME_RESET to {
+		SettingsHomeResetScreen()
 	},
 	Routes.LIVETV_GUIDE_FILTERS to {
 		SettingsLiveTvGuideFiltersScreen()

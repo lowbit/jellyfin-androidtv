@@ -1,32 +1,29 @@
 package org.jellyfin.androidtv.ui.settings.screen.home
 
-import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import org.jellyfin.androidtv.R
-import org.jellyfin.androidtv.constant.HomeSectionType
-import org.jellyfin.androidtv.preference.UserSettingPreferences
 import org.jellyfin.androidtv.ui.base.Text
-import org.jellyfin.androidtv.ui.base.form.RadioButton
 import org.jellyfin.androidtv.ui.base.list.ListButton
 import org.jellyfin.androidtv.ui.base.list.ListMessage
 import org.jellyfin.androidtv.ui.base.list.ListSection
 import org.jellyfin.androidtv.ui.navigation.LocalRouter
 import org.jellyfin.androidtv.ui.navigation.focus.focusKey
-import org.jellyfin.androidtv.ui.settings.compat.rememberPreference
+import org.jellyfin.androidtv.ui.settings.Routes
 import org.jellyfin.androidtv.ui.settings.composable.SettingsColumn
-import org.koin.compose.koinInject
+import org.koin.androidx.compose.koinViewModel
 
 @Composable
 fun SettingsHomeSectionScreen(index: Int) {
 	val router = LocalRouter.current
-	val userSettingPreferences = koinInject<UserSettingPreferences>()
-	val sectionPreference = userSettingPreferences.homesections.getOrNull(index)
+	val viewModel = koinViewModel<SettingsHomeViewModel>()
+	val state by viewModel.state.collectAsState()
+	val section = state.sections.getOrNull(index)
 
-	if (sectionPreference == null) {
+	if (section == null) {
 		ListMessage {
 			Text("Unknown section $index")
 		}
@@ -34,26 +31,67 @@ fun SettingsHomeSectionScreen(index: Int) {
 		return
 	}
 
-	var sectionType by rememberPreference(userSettingPreferences, sectionPreference)
-
 	SettingsColumn {
 		item {
 			ListSection(
-				overlineContent = { Text(stringResource(R.string.home_prefs).uppercase()) },
-				headingContent = { Text(stringResource(R.string.home_section_i, index + 1)) },
+				overlineContent = { Text(stringResource(R.string.home_sections).uppercase()) },
+				headingContent = { Text(state.providerName(section.key)) },
+				captionContent = state.itemName(section.itemId)?.let { name -> ({ Text(name) }) },
 			)
 		}
 
-		items(HomeSectionType.entries) { entry ->
+		item {
 			ListButton(
-				headingContent = { Text(stringResource(entry.nameRes)) },
-				trailingContent = { RadioButton(checked = sectionType == entry) },
+				headingContent = { Text(stringResource(R.string.home_section_move_up)) },
+				enabled = index > 0,
 				onClick = {
-					sectionType = entry
+					viewModel.move(index, -1)
 					router.back()
 				},
-				modifier = Modifier
-					.focusKey("section_type_${entry.name}", initialFocus = sectionType == entry)
+				modifier = Modifier.focusKey("home_section_move_up")
+			)
+		}
+
+		item {
+			ListButton(
+				headingContent = { Text(stringResource(R.string.home_section_move_down)) },
+				enabled = index < state.sections.lastIndex,
+				onClick = {
+					viewModel.move(index, 1)
+					router.back()
+				},
+				modifier = Modifier.focusKey("home_section_move_down")
+			)
+		}
+
+		item {
+			ListButton(
+				headingContent = { Text(stringResource(if (section.active) R.string.home_section_hide else R.string.home_section_show)) },
+				onClick = {
+					viewModel.setActive(index, !section.active)
+					router.back()
+				},
+				modifier = Modifier.focusKey("home_section_active")
+			)
+		}
+
+		item {
+			ListButton(
+				headingContent = { Text(stringResource(R.string.home_section_max_items)) },
+				captionContent = { Text(section.maxItems?.toString() ?: stringResource(R.string.home_section_max_items_default)) },
+				onClick = { router.push(Routes.HOME_SECTION_MAX_ITEMS, mapOf("index" to index.toString())) },
+				modifier = Modifier.focusKey("home_section_max_items")
+			)
+		}
+
+		item {
+			ListButton(
+				headingContent = { Text(stringResource(R.string.home_section_remove)) },
+				onClick = {
+					viewModel.remove(index)
+					router.back()
+				},
+				modifier = Modifier.focusKey("home_section_remove")
 			)
 		}
 	}
