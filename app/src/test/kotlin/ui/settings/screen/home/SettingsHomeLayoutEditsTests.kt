@@ -6,8 +6,8 @@ import io.kotest.matchers.shouldBe
 import org.jellyfin.sdk.model.api.HomeSectionConfigDto
 import java.util.UUID
 
-private fun config(key: String, itemId: UUID? = null, maxItems: Int? = null, active: Boolean = true) =
-	HomeSectionConfigDto(key = key, itemId = itemId, maxItems = maxItems, active = active)
+private fun config(key: String, vararg itemIds: UUID, maxItems: Int? = null, active: Boolean = true) =
+	HomeSectionConfigDto(key = key, itemIds = itemIds.toList(), maxItems = maxItems, active = active)
 
 class SettingsHomeLayoutEditsTests : FunSpec({
 	val collection = UUID.randomUUID()
@@ -21,10 +21,46 @@ class SettingsHomeLayoutEditsTests : FunSpec({
 		layout.withSection("pinnedcollection", collection) shouldBe layout
 	}
 
-	test("withoutSection removes by key and item, or by index") {
+	test("withoutSection removes by key and item, by key alone, or by index") {
 		layout.withoutSection("pinnedcollection", collection) shouldContainExactly listOf(config("resume"), config("nextup"))
-		layout.withoutSection("pinnedcollection", null) shouldBe layout
+		layout.withoutSection("pinnedcollection") shouldContainExactly listOf(config("resume"), config("nextup"))
+		layout.withoutSection("pinnedcollection", UUID.randomUUID()) shouldBe layout
 		layout.withoutSection(0) shouldContainExactly listOf(config("pinnedcollection", collection), config("nextup"))
+	}
+
+	test("withItemToggled narrows a section, or adds one bound to that item") {
+		val action = UUID.randomUUID()
+		val comedy = UUID.randomUUID()
+		val genres = layout + config("genre")
+
+		val narrowed = genres.withItemToggled("genre", action)
+		narrowed shouldContainExactly layout + config("genre", action)
+
+		narrowed.withItemToggled("genre", comedy) shouldContainExactly layout + config("genre", action, comedy)
+
+		// Unticking the last one leaves the section with nothing, which draws nothing.
+		narrowed.withItemToggled("genre", action) shouldContainExactly layout + config("genre")
+
+		// Nothing to narrow yet: the row is added, bound to what was ticked.
+		layout.withItemToggled("genre", action) shouldContainExactly layout + config("genre", action)
+	}
+
+	test("withItems replaces one section's list") {
+		val action = UUID.randomUUID()
+		val comedy = UUID.randomUUID()
+		val genres = layout + config("genre", action)
+
+		genres.withItems("genre", listOf(action, comedy)) shouldContainExactly layout + config("genre", action, comedy)
+		genres.withItems("genre", emptyList()) shouldContainExactly layout + config("genre")
+		genres.withItems("missing", listOf(action)) shouldBe genres
+	}
+
+	test("withSection can start a section off with several items") {
+		val action = UUID.randomUUID()
+		val comedy = UUID.randomUUID()
+
+		layout.withSection("genre", listOf(action, comedy)) shouldContainExactly layout + config("genre", action, comedy)
+		layout.withSection("genre", listOf(action, comedy)).withSection("genre", listOf(action, comedy)) shouldContainExactly layout + config("genre", action, comedy)
 	}
 
 	test("moved swaps with its neighbour and stays put at the edges") {

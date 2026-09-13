@@ -429,6 +429,9 @@
     <string name="home_section_show">Show</string>
     <string name="home_section_hide">Hide</string>
     <string name="home_section_hidden">Hidden</string>
+    <string name="home_section_choose_items">Choose what to show</string>
+    <string name="home_section_all_items">All</string>
+    <string name="home_section_select_all">Select all</string>
     <string name="home_section_max_items">Maximum items</string>
     <string name="home_section_max_items_default">Default</string>
     <string name="home_section_reset">Reset to default layout</string>

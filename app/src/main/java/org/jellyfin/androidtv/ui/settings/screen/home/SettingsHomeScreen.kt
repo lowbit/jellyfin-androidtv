@@ -44,7 +44,7 @@ fun SettingsHomeScreen() {
 
 		itemsIndexed(state.sections) { index, section ->
 			val caption = listOfNotNull(
-				state.itemName(section.itemId),
+				state.itemNames(section),
 				if (!section.active) stringResource(R.string.home_section_hidden) else null,
 			).joinToString(", ")
 

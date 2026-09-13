@@ -36,8 +36,23 @@ fun SettingsHomeSectionScreen(index: Int) {
 			ListSection(
 				overlineContent = { Text(stringResource(R.string.home_sections).uppercase()) },
 				headingContent = { Text(state.providerName(section.key)) },
-				captionContent = state.itemName(section.itemId)?.let { name -> ({ Text(name) }) },
+				captionContent = state.itemNames(section)
+					?.takeUnless { state.takesSeveralItems(section.key) }
+					?.let { name -> ({ Text(name) }) },
 			)
+		}
+
+		if (state.takesSeveralItems(section.key)) {
+			item {
+				ListButton(
+					headingContent = { Text(stringResource(R.string.home_section_choose_items)) },
+					captionContent = {
+						Text(state.itemNames(section) ?: stringResource(R.string.home_section_all_items))
+					},
+					onClick = { router.push(Routes.HOME_SECTION_ADD_ITEM, mapOf("key" to section.key)) },
+					modifier = Modifier.focusKey("home_section_items")
+				)
+			}
 		}
 
 		item {

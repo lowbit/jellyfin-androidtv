@@ -1,11 +1,14 @@
 package org.jellyfin.androidtv.ui.settings.screen.home
 
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.ui.base.Text
 import org.jellyfin.androidtv.ui.base.form.Checkbox
@@ -18,7 +21,8 @@ import org.koin.androidx.compose.koinViewModel
 
 /**
  * The items a provider can be bound to. Each one is toggled in place: a tick means the layout
- * has a row for it.
+ * has a row for it. A provider that takes several also gets "Select all", ticked once every item
+ * is, which ticks or clears the lot.
  */
 @Composable
 fun SettingsHomeSectionItemScreen(key: String) {
@@ -51,16 +55,24 @@ fun SettingsHomeSectionItemScreen(key: String) {
 			item { ListMessage { Text(stringResource(R.string.lbl_no_items)) } }
 		}
 
-		items(items) { item ->
-			val added = state.contains(key, item.id)
+		if (state.takesSeveralItems(key)) {
+			item {
+				ListButton(
+					headingContent = { Text(stringResource(R.string.home_section_select_all)) },
+					trailingContent = { Checkbox(checked = state.section(key)?.let(state::hasEveryItem) == true) },
+					onClick = { viewModel.toggleAllItems(key) },
+					modifier = Modifier.focusKey("home_section_item_all")
+				)
+			}
 
+			item { Spacer(Modifier.height(16.dp)) }
+		}
+
+		items(items) { item ->
 			ListButton(
 				headingContent = { Text(item.name.orEmpty()) },
-				trailingContent = { Checkbox(checked = added) },
-				onClick = {
-					if (added) viewModel.remove(key, item.id)
-					else viewModel.add(key, item.id)
-				},
+				trailingContent = { Checkbox(checked = state.containsItem(key, item.id)) },
+				onClick = { viewModel.toggleItem(key, item.id) },
 				modifier = Modifier.focusKey("home_section_item_${item.id}")
 			)
 		}

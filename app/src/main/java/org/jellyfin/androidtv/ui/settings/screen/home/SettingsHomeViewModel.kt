@@ -1,6 +1,9 @@
 package org.jellyfin.androidtv.ui.settings.screen.home
 
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.ViewModel
+import org.jellyfin.androidtv.R
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -46,8 +49,48 @@ class SettingsHomeViewModel(
 		val failed get() = error != null || saveError != null
 		fun provider(key: String) = providers.firstOrNull { it.key == key }
 		fun providerName(key: String) = provider(key)?.name ?: key
-		fun itemName(itemId: UUID?) = itemId?.let { id -> items.values.asSequence().flatten().firstOrNull { it.id == id }?.name }
-		fun contains(key: String, itemId: UUID?) = sections.any { it.key == key && it.itemId == itemId }
+		fun itemName(itemId: UUID) = items.values.asSequence().flatten().firstOrNull { it.id == itemId }?.name
+
+		/** Whether a section takes any number of items, each of them getting a row. */
+		fun takesSeveralItems(key: String) = provider(key)?.let { it.itemKind != null && it.allowsMultipleItems } == true
+
+		/** The ids of everything a section of this kind can be bound to. */
+		fun offeredItemIds(key: String) = provider(key)?.itemKind?.let { kind -> items[kind] }.orEmpty().map { it.id }
+
+		/** Whether a section that takes several items has every one of them. */
+		fun hasEveryItem(section: HomeSectionConfigDto): Boolean {
+			val offered = offeredItemIds(section.key)
+			return offered.isNotEmpty() && section.itemIds.containsAll(offered)
+		}
+
+		/**
+		 * What a section is bound to, for the caption under its name: all, none, or the names,
+		 * cut to the first few and a count since a caption is one line. Null when it says nothing.
+		 */
+		@Composable
+		fun itemNames(section: HomeSectionConfigDto): String? {
+			if (takesSeveralItems(section.key)) {
+				if (section.itemIds.isEmpty()) return stringResource(R.string.lbl_none)
+				if (hasEveryItem(section)) return stringResource(R.string.home_section_all_items)
+			}
+
+			val names = section.itemIds.mapNotNull(::itemName)
+			if (names.isEmpty()) return null
+
+			val shown = names.take(MAX_CAPTION_NAMES).joinToString(", ")
+			val rest = names.size - MAX_CAPTION_NAMES
+			return if (rest > 0) "$shown, +$rest" else shown
+		}
+
+		fun section(key: String) = sections.firstOrNull { it.key == key }
+		fun containsSection(key: String) = section(key) != null
+		fun containsItem(key: String, itemId: UUID) = sections.any {
+			it.key == key && (if (takesSeveralItems(key)) itemId in it.itemIds else it.itemIds == listOf(itemId))
+		}
+	}
+
+	private companion object {
+		const val MAX_CAPTION_NAMES = 3
 	}
 
 	private val _state = MutableStateFlow(State())
@@ -102,8 +145,32 @@ class SettingsHomeViewModel(
 		).content.items
 	}
 
-	fun add(key: String, itemId: UUID? = null) = save(state.value.sections.withSection(key, itemId))
-	fun remove(key: String, itemId: UUID?) = save(state.value.sections.withoutSection(key, itemId))
+	/**
+	 * Adds or removes a section that takes no item, or one that takes several, which starts
+	 * with all of them so that adding it needs no more.
+	 */
+	fun toggleSection(key: String) = save(
+		if (state.value.containsSection(key)) state.value.sections.withoutSection(key)
+		else state.value.sections.withSection(key, state.value.offeredItemIds(key))
+	)
+
+	/**
+	 * Adds or removes one item. For a section that takes several the item joins or leaves that
+	 * section's list; otherwise the section bound to that item is added or removed.
+	 */
+	fun toggleItem(key: String, itemId: UUID) = save(
+		if (state.value.takesSeveralItems(key)) state.value.sections.withItemToggled(key, itemId)
+		else if (state.value.containsItem(key, itemId)) state.value.sections.withoutSection(key, itemId)
+		else state.value.sections.withSection(key, itemId)
+	)
+
+	/** Every item on offer, or none, for a section that takes several. */
+	fun toggleAllItems(key: String) {
+		val section = state.value.section(key) ?: return
+		val itemIds = if (state.value.hasEveryItem(section)) emptyList() else state.value.offeredItemIds(key)
+		save(state.value.sections.withItems(key, itemIds))
+	}
+
 	fun remove(index: Int) = save(state.value.sections.withoutSection(index))
 	fun move(index: Int, offset: Int) = save(state.value.sections.moved(index, offset))
 	fun setActive(index: Int, active: Boolean) = save(state.value.sections.withActive(index, active))
@@ -139,11 +206,32 @@ class SettingsHomeViewModel(
 // The layout edits, as functions of the list so they can be tested on their own
 
 fun List<HomeSectionConfigDto>.withSection(key: String, itemId: UUID? = null): List<HomeSectionConfigDto> =
-	if (any { it.key == key && it.itemId == itemId }) this
-	else this + HomeSectionConfigDto(key = key, itemId = itemId, maxItems = null, active = true)
+	withSection(key, listOfNotNull(itemId))
 
-fun List<HomeSectionConfigDto>.withoutSection(key: String, itemId: UUID?): List<HomeSectionConfigDto> =
-	filterNot { it.key == key && it.itemId == itemId }
+fun List<HomeSectionConfigDto>.withSection(key: String, itemIds: List<UUID>): List<HomeSectionConfigDto> {
+	if (any { it.key == key && it.itemIds == itemIds }) return this
+
+	return this + HomeSectionConfigDto(key = key, itemIds = itemIds, maxItems = null, active = true)
+}
+
+fun List<HomeSectionConfigDto>.withoutSection(key: String, itemId: UUID? = null): List<HomeSectionConfigDto> =
+	filterNot { it.key == key && (itemId == null || it.itemIds == listOf(itemId)) }
+
+/**
+ * Adds or removes one item of a section that takes several, adding the section itself when the
+ * layout has none.
+ */
+fun List<HomeSectionConfigDto>.withItemToggled(key: String, itemId: UUID): List<HomeSectionConfigDto> {
+	if (none { it.key == key }) return this + HomeSectionConfigDto(key = key, itemIds = listOf(itemId), maxItems = null, active = true)
+
+	return map { section ->
+		if (section.key != key) section
+		else section.copy(itemIds = if (itemId in section.itemIds) section.itemIds - itemId else section.itemIds + itemId)
+	}
+}
+
+fun List<HomeSectionConfigDto>.withItems(key: String, itemIds: List<UUID>): List<HomeSectionConfigDto> =
+	map { section -> if (section.key == key) section.copy(itemIds = itemIds) else section }
 
 fun List<HomeSectionConfigDto>.withoutSection(index: Int): List<HomeSectionConfigDto> =
 	filterIndexed { i, _ -> i != index }

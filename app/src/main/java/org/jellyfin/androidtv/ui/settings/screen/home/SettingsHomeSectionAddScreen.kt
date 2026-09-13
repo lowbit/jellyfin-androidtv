@@ -19,8 +19,9 @@ import org.jellyfin.androidtv.ui.settings.composable.SettingsColumn
 import org.koin.androidx.compose.koinViewModel
 
 /**
- * The sections the server offers, in the order it sends them. A provider that binds to an item
- * opens a picker, every other one is toggled in place so the layout cannot hold it twice.
+ * The sections the server offers, in the order it sends them. A provider bound to exactly one
+ * item opens a picker; every other one, including one that takes several items and shows them
+ * all until narrowed, is toggled in place so the layout cannot hold it twice.
  */
 @Composable
 fun SettingsHomeSectionAddScreen() {
@@ -41,16 +42,11 @@ fun SettingsHomeSectionAddScreen() {
 		}
 
 		items(state.providers) { provider ->
-			if (provider.itemKind == null) {
-				val added = state.contains(provider.key, null)
-
+			if (provider.itemKind == null || provider.allowsMultipleItems) {
 				ListButton(
 					headingContent = { Text(provider.name) },
-					trailingContent = { Checkbox(checked = added) },
-					onClick = {
-						if (added) viewModel.remove(provider.key, null)
-						else viewModel.add(provider.key)
-					},
+					trailingContent = { Checkbox(checked = state.containsSection(provider.key)) },
+					onClick = { viewModel.toggleSection(provider.key) },
 					modifier = Modifier.focusKey("home_section_provider_${provider.key}")
 				)
 			} else {
