@@ -6,12 +6,12 @@ import org.jellyfin.playback.core.queue.QueueEntry
 import org.jellyfin.playback.core.queue.QueueEntryMetadata
 import org.jellyfin.playback.core.queue.metadata
 import org.jellyfin.sdk.api.client.ApiClient
-import org.jellyfin.sdk.api.client.extensions.imageApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.ImageType
 import org.jellyfin.sdk.model.extensions.ticks
 import java.util.UUID
 import org.jellyfin.playback.core.mediastream.mediatype.MediaType as PlayerMediaType
+import org.jellyfin.sdk.api.client.extensions.imageApi
 import org.jellyfin.sdk.model.api.MediaType as SdkMediaType
 
 /**
