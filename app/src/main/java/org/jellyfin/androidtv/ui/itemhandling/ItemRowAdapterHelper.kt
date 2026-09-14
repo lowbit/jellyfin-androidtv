@@ -117,6 +117,15 @@ fun ItemRowAdapter.setHomeSectionItems(items: List<BaseItemDto>) {
 }
 
 /**
+ * Shows items fetched elsewhere, such as a refresh of only the stale home sections, and finishes
+ * the row as a retrieve would.
+ */
+fun ItemRowAdapter.showHomeSectionItems(items: List<BaseItemDto>) {
+	setHomeSectionItems(items)
+	notifyRetrieveFinished()
+}
+
+/**
  * Refetches the whole home screen through the repository, which dedups concurrent rows, and
  * picks this row out by id.
  */

@@ -27,6 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.R
+import org.jellyfin.androidtv.constant.HomeSectionKey
 import org.jellyfin.androidtv.data.repository.ItemRepository
 import org.jellyfin.androidtv.data.repository.UserViewsRepository
 import org.jellyfin.androidtv.integration.provider.ImageProvider
@@ -35,6 +36,7 @@ import org.jellyfin.androidtv.ui.startup.StartupActivity
 import org.jellyfin.androidtv.util.AndroidVersion
 import org.jellyfin.androidtv.util.ImageHelper
 import org.jellyfin.androidtv.util.apiclient.getUrl
+import org.jellyfin.androidtv.util.apiclient.itemBackdropImages
 import org.jellyfin.androidtv.util.apiclient.itemImages
 import org.jellyfin.androidtv.util.apiclient.parentImages
 import org.jellyfin.androidtv.util.dp
@@ -43,12 +45,15 @@ import org.jellyfin.androidtv.util.stripHtml
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.exception.ApiClientException
 import org.jellyfin.sdk.api.client.exception.TimeoutException
+import org.jellyfin.sdk.api.client.extensions.homeSectionsApi
 import org.jellyfin.sdk.api.client.extensions.libraryApi
 import org.jellyfin.sdk.api.client.extensions.showApi
-import org.jellyfin.sdk.api.client.extensions.userViewApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
+import org.jellyfin.sdk.model.api.HomeSectionDto
+import org.jellyfin.sdk.model.api.HomeSectionViewType
 import org.jellyfin.sdk.model.api.ImageType
+import org.jellyfin.sdk.model.api.ItemFields
 import org.jellyfin.sdk.model.api.MediaType
 import org.jellyfin.sdk.model.extensions.ticks
 import org.koin.core.component.KoinComponent
@@ -61,7 +66,8 @@ import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
 
 /**
- * Manages channels on the android tv home screen.
+ * Manages channels on the android tv home screen. Each row of the app's home screen gets a channel,
+ * in the same order, so a row added on the server or by a plugin shows up there too.
  *
  * More info: https://developer.android.com/training/tv/discovery/recommendations-channel.
  */
@@ -71,6 +77,11 @@ class LeanbackChannelWorker(
 ) : CoroutineWorker(context, workerParams), KoinComponent {
 	companion object {
 		private const val PERIODIC_UPDATE_REQUEST_NAME = "LeanbackChannelPeriodicUpdateRequest"
+		private const val CHANNEL_STORE = "leanback_channels"
+		private const val SECTION_CHANNEL_PREFIX = "section:"
+
+		// A launcher row is browsed a few cards deep, the whole row is one press away in the app
+		private const val CHANNEL_ITEM_LIMIT = 20
 
 		suspend fun enqueue(workManager: WorkManager) {
 			workManager.enqueueUniquePeriodicWork(
@@ -108,67 +119,37 @@ class LeanbackChannelWorker(
 		else -> try {
 			// Get next up episodes
 			val (resumeItems, nextUpItems) = getNextUpItems()
-			// Get latest media
-			val (latestEpisodes, latestMovies, latestMedia) = getLatestMedia()
-			val myMedia = getMyMedia()
+			// Get the rows of the home screen
+			val sections = getSections()
 			// Delete current items from the channels
 			context.contentResolver.delete(TvContractCompat.PreviewPrograms.CONTENT_URI, null, null)
 
-			// Get channel URIs
-			val latestMediaChannel = getChannelUri(
-				"latest_media", Channel.Builder()
-					.setType(TvContractCompat.Channels.TYPE_PREVIEW)
-					.setDisplayName(context.getString(R.string.home_section_latest_media))
-					.setAppLinkIntent(Intent(context, StartupActivity::class.java))
-					.build(),
-				default = true
-			)
-			val myMediaChannel = getChannelUri(
-				"my_media", Channel.Builder()
-					.setType(TvContractCompat.Channels.TYPE_PREVIEW)
-					.setDisplayName(context.getString(R.string.lbl_my_media))
-					.setAppLinkIntent(Intent(context, StartupActivity::class.java))
-					.build()
-			)
-			val nextUpChannel = getChannelUri(
-				"next_up", Channel.Builder()
-					.setType(TvContractCompat.Channels.TYPE_PREVIEW)
-					.setDisplayName(context.getString(R.string.lbl_next_up))
-					.setAppLinkIntent(Intent(context, StartupActivity::class.java))
-					.build()
-			)
-			val latestMoviesChannel = getChannelUri(
-				"latest_movies", Channel.Builder()
-					.setType(TvContractCompat.Channels.TYPE_PREVIEW)
-					.setDisplayName(context.getString(R.string.lbl_movies))
-					.setAppLinkIntent(Intent(context, StartupActivity::class.java))
-					.build()
-			)
-			val latestEpisodesChannel = getChannelUri(
-				"latest_episodes", Channel.Builder()
-					.setType(TvContractCompat.Channels.TYPE_PREVIEW)
-					.setDisplayName(context.getString(R.string.lbl_new_episodes))
-					.setAppLinkIntent(Intent(context, StartupActivity::class.java))
-					.build()
-			)
 			val preferParentThumb = userPreferences[UserPreferences.seriesThumbnailsEnabled]
+			val channelNames = mutableSetOf<String>()
 
-			// Add new items
-			arrayOf(
-				nextUpItems to nextUpChannel,
-				latestMedia to latestMediaChannel,
-				latestMovies to latestMoviesChannel,
-				latestEpisodes to latestEpisodesChannel,
-				myMedia to myMediaChannel,
-			).forEach { (items, channel) ->
+			sections.forEachIndexed { index, section ->
+				val name = SECTION_CHANNEL_PREFIX + section.id
+				channelNames += name
+
+				val channel = getChannelUri(
+					name, Channel.Builder()
+						.setType(TvContractCompat.Channels.TYPE_PREVIEW)
+						.setDisplayName(section.displayText)
+						.setInternalProviderId(section.id)
+						.setAppLinkIntent(Intent(context, StartupActivity::class.java))
+						.build(),
+					default = index == 0
+				)
+
 				if (channel == null) {
 					Timber.e("Skipping channel because it was not available")
 				} else {
-					items.map { item ->
+					section.items.map { item ->
 						createPreviewProgram(
 							channel,
 							item,
-							preferParentThumb
+							preferParentThumb,
+							section.viewType
 						)
 					}.let {
 						context.contentResolver.bulkInsert(
@@ -178,6 +159,7 @@ class LeanbackChannelWorker(
 					}
 				}
 			}
+			removeChannels(keep = channelNames)
 			updateWatchNext(resumeItems + nextUpItems)
 
 			// Success!
@@ -199,7 +181,7 @@ class LeanbackChannelWorker(
 	 * unique.
 	 */
 	private fun getChannelUri(name: String, settings: Channel, default: Boolean = false): Uri? {
-		val store = context.getSharedPreferences("leanback_channels", Context.MODE_PRIVATE)
+		val store = context.getSharedPreferences(CHANNEL_STORE, Context.MODE_PRIVATE)
 		var uri: Uri? = null
 
 		// Try and re-use our existing channel definition
@@ -244,24 +226,43 @@ class LeanbackChannelWorker(
 	}
 
 	/**
-	 * Updates the "my media" row with current media libraries.
+	 * Deletes the channels of rows that are no longer on the home screen, including the fixed
+	 * channels this worker created before its rows came from the server.
 	 */
-	@Suppress("RestrictedApi")
-	private suspend fun getMyMedia(): List<BaseItemDto> {
-		val response by api.userViewApi.getUserViews(includeHidden = false)
+	private fun removeChannels(keep: Set<String>) {
+		val store = context.getSharedPreferences(CHANNEL_STORE, Context.MODE_PRIVATE)
+		val stale = store.all.keys - keep
 
-		// Add new items
-		return response.items
-			.filter { userViewsRepository.isSupported(it.collectionType) }
+		stale.forEach { name ->
+			store.getString(name, null)?.toUri()?.let { context.contentResolver.delete(it, null, null) }
+		}
+		store.edit { stale.forEach { remove(it) } }
 	}
 
 	/**
+	 * Gets the rows of the user's home screen that have something to show. The live TV row is left
+	 * out, as it always was here, and the library row keeps the libraries the app can browse.
+	 */
+	private suspend fun getSections(): List<HomeSectionDto> =
+		// The launcher shows the description, the home screen does not, so only this asks for it
+		api.homeSectionsApi.getHomeSections(itemLimit = CHANNEL_ITEM_LIMIT, fields = listOf(ItemFields.OVERVIEW)).content
+			.filter { section -> section.key != HomeSectionKey.LIVE_TV }
+			.map { section ->
+				if (section.key !in HomeSectionKey.libraryKeys) section
+				else section.copy(items = section.items.filter { userViewsRepository.isSupported(it.collectionType) })
+			}
+			.filter { section -> section.items.isNotEmpty() }
+
+	/**
 	 * Gets the poster art for an item. Uses the [preferParentThumb] parameter to fetch the series
-	 * image when preferred.
+	 * image when preferred, and a wide image for a film or series on a [landscape] card.
 	 */
 	private fun BaseItemDto.getPosterArtImageUrl(
-		preferParentThumb: Boolean
+		preferParentThumb: Boolean,
+		landscape: Boolean = false,
 	): Uri = when {
+		landscape && (type == BaseItemKind.MOVIE || type == BaseItemKind.SERIES) ->
+			itemImages[ImageType.THUMB] ?: itemBackdropImages.firstOrNull() ?: itemImages[ImageType.PRIMARY]
 		type == BaseItemKind.MOVIE || type == BaseItemKind.SERIES -> itemImages[ImageType.PRIMARY]
 		(preferParentThumb || !itemImages.contains(ImageType.PRIMARY)) && parentImages.contains(ImageType.THUMB) -> parentImages[ImageType.THUMB]
 		else -> itemImages[ImageType.PRIMARY]
@@ -300,46 +301,14 @@ class LeanbackChannelWorker(
 			Pair(resume.await(), nextUp.await())
 		}
 
-	private suspend fun getLatestMedia(): Triple<List<BaseItemDto>, List<BaseItemDto>, List<BaseItemDto>> =
-		withContext(Dispatchers.IO) {
-			val latestEpisodes = async {
-				api.libraryApi.getLatestMedia(
-					fields = ItemRepository.itemFields,
-					limit = 50,
-					includeItemTypes = listOf(BaseItemKind.EPISODE),
-					isPlayed = false
-				).content
-			}
-
-			val latestMovies = async {
-				api.libraryApi.getLatestMedia(
-					fields = ItemRepository.itemFields,
-					limit = 50,
-					includeItemTypes = listOf(BaseItemKind.MOVIE),
-					isPlayed = false
-				).content
-			}
-
-			val latestMedia = async {
-				api.libraryApi.getLatestMedia(
-					fields = ItemRepository.itemFields,
-					limit = 50,
-					includeItemTypes = listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES),
-					isPlayed = false
-				).content
-			}
-
-			// Concat
-			Triple(latestEpisodes.await(), latestMovies.await(), latestMedia.await())
-		}
-
 	@SuppressLint("RestrictedApi")
 	private fun createPreviewProgram(
 		channelUri: Uri,
 		item: BaseItemDto,
-		preferParentThumb: Boolean
+		preferParentThumb: Boolean,
+		viewType: HomeSectionViewType,
 	): ContentValues {
-		val imageUri = item.getPosterArtImageUrl(preferParentThumb)
+		val imageUri = item.getPosterArtImageUrl(preferParentThumb, viewType == HomeSectionViewType.LANDSCAPE)
 		val seasonString = item.parentIndexNumber?.toString().orEmpty()
 
 		val episodeString = when {
@@ -370,11 +339,10 @@ class LeanbackChannelWorker(
 			)
 			.setPosterArtUri(imageUri)
 			.setPosterArtAspectRatio(
-				when (item.type) {
-					BaseItemKind.COLLECTION_FOLDER,
-					BaseItemKind.EPISODE -> TvContractCompat.PreviewPrograms.ASPECT_RATIO_16_9
-
-					else -> TvContractCompat.PreviewPrograms.ASPECT_RATIO_MOVIE_POSTER
+				when (viewType) {
+					HomeSectionViewType.LANDSCAPE -> TvContractCompat.PreviewPrograms.ASPECT_RATIO_16_9
+					HomeSectionViewType.SQUARE -> TvContractCompat.PreviewPrograms.ASPECT_RATIO_1_1
+					HomeSectionViewType.PORTRAIT -> TvContractCompat.PreviewPrograms.ASPECT_RATIO_MOVIE_POSTER
 				}
 			)
 			.setIntent(Intent(context, StartupActivity::class.java).apply {

@@ -11,5 +11,6 @@ class DataRefreshService {
 	var lastTvPlayback: Instant? = null
 	var lastLibraryChange: Instant? = null
 	var lastFavoriteUpdate: Instant? = null
+	var lastHomeLayoutChange: Instant? = null
 	var lastPlayedItem: BaseItemDto? = null
 }

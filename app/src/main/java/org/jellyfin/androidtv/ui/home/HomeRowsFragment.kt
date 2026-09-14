@@ -43,6 +43,7 @@ import org.jellyfin.androidtv.ui.itemhandling.BaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.itemhandling.ItemRowAdapter
 import org.jellyfin.androidtv.ui.itemhandling.refreshItem
+import org.jellyfin.androidtv.ui.itemhandling.showHomeSectionItems
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.playback.AudioEventListener
@@ -82,6 +83,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private val sectionRows = HomeSectionRows<Row>()
 	private val refreshMutex = Mutex()
 	private var lastRefresh: Instant? = null
+	private var lastSections: List<HomeSectionDto> = emptyList()
 
 	// Special rows
 	private val notificationsRow by lazy { NotificationsHomeFragmentRow(lifecycleScope, notificationsRepository) }
@@ -175,10 +177,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 	/**
 	 * Fetches the layout once and redraws it. Rows whose section id survived are kept, so focus
-	 * stays where it was, and are refreshed in place when their key is stale.
+	 * stays where it was, and are refreshed in place when their key is stale. When only some keys
+	 * went stale only their sections are fetched.
 	 */
 	private suspend fun refreshSections(allStale: Boolean, staleKeys: Collection<String>) = refreshMutex.withLock {
-		refreshSectionsLocked(allStale, staleKeys)
+		if (allStale || !refreshStaleRows(staleKeys)) refreshSectionsLocked(allStale, staleKeys)
 	}
 
 	private suspend fun refreshSectionsLocked(allStale: Boolean, staleKeys: Collection<String>) {
@@ -192,6 +195,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		}
 
 		if (context == null) return
+		lastSections = sections
 		val cardPresenter = CardPresenter()
 		val sectionsById = sections.associateBy { it.id }
 
@@ -231,6 +235,37 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		}
 	}
 
+	/**
+	 * Refreshes the rows of the stale keys from a request for just those sections. Returns false
+	 * when those keys now have other rows than the screen shows, so the layout has to be redrawn.
+	 */
+	private suspend fun refreshStaleRows(staleKeys: Collection<String>): Boolean {
+		if (staleKeys.isEmpty()) return true
+
+		val fresh = withContext(Dispatchers.IO) {
+			runCatching { homeSectionsRepository.getSections(staleKeys) }
+				.onFailure { Timber.e(it, "Unable to refresh home sections") }
+				.getOrNull()
+		} ?: return true
+
+		val shown = lastSections.filter { it.key in staleKeys }
+		if (fresh.map { it.id } != shown.map { it.id }) return false
+		if (context == null) return true
+
+		Timber.i("Refreshing %d home rows for %s", fresh.size, staleKeys)
+		val freshById = fresh.associateBy { it.id }
+		lastSections = lastSections.map { freshById[it.id] ?: it }
+
+		for (section in fresh) {
+			for (row in sectionRows[section.id]) {
+				val rowAdapter = (row as? ListRow)?.adapter as? ItemRowAdapter ?: continue
+				rowAdapter.showHomeSectionItems(section.items)
+			}
+		}
+
+		return true
+	}
+
 	private fun createLibraryRows(): List<Row> = listOf(HomeFragmentViewsRow(small = false).createRow(requireContext(), rowsAdapter))
 
 	private fun createRows(section: HomeSectionDto, cardPresenter: CardPresenter): List<Row> = when (section.key) {
@@ -260,6 +295,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				dataRefreshService.lastLibraryChange,
 				dataRefreshService.lastPlayback,
 				dataRefreshService.lastFavoriteUpdate,
+				// A pin from another screen: the change push arrived while this one was not listening
+				dataRefreshService.lastHomeLayoutChange,
 			).any { it.isAfter(since) }
 
 			if (changed) refreshSections(allStale = true, staleKeys = emptyList())

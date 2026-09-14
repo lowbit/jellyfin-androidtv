@@ -70,6 +70,22 @@ class SettingsHomeLayoutEditsTests : FunSpec({
 		layout.moved(2, 1) shouldBe layout
 	}
 
+	test("withItemMoved steps a row through its section, clamped to the ends") {
+		val marvel = UUID.randomUUID()
+		val potter = UUID.randomUUID()
+		val bond = UUID.randomUUID()
+		val collections = listOf(config("resume"), config("pinnedcollection", marvel, potter, bond))
+
+		collections.withItemMoved(1, bond, -1) shouldContainExactly listOf(config("resume"), config("pinnedcollection", marvel, bond, potter))
+		collections.withItemMoved(1, marvel, 1) shouldContainExactly listOf(config("resume"), config("pinnedcollection", potter, marvel, bond))
+		// A large offset means top or bottom.
+		collections.withItemMoved(1, bond, -99) shouldContainExactly listOf(config("resume"), config("pinnedcollection", bond, marvel, potter))
+		collections.withItemMoved(1, marvel, 99) shouldContainExactly listOf(config("resume"), config("pinnedcollection", potter, bond, marvel))
+		collections.withItemMoved(1, marvel, -1) shouldBe collections
+		collections.withItemMoved(1, UUID.randomUUID(), 1) shouldBe collections
+		collections.withItemMoved(5, marvel, 1) shouldBe collections
+	}
+
 	test("withActive hides one section") {
 		layout.withActive(1, false) shouldContainExactly listOf(
 			config("resume"),

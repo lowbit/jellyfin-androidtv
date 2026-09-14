@@ -53,6 +53,15 @@ fun SettingsHomeSectionScreen(index: Int) {
 					modifier = Modifier.focusKey("home_section_items")
 				)
 			}
+
+			item {
+				ListButton(
+					headingContent = { Text(stringResource(R.string.home_section_order_items)) },
+					enabled = section.itemIds.size > 1,
+					onClick = { router.push(Routes.HOME_SECTION_ORDER, mapOf("index" to index.toString())) },
+					modifier = Modifier.focusKey("home_section_order")
+				)
+			}
 		}
 
 		item {

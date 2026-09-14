@@ -12,6 +12,7 @@ import kotlinx.coroutines.sync.withLock
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.homeSectionsApi
 import org.jellyfin.sdk.api.sockets.subscribe
+import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.HomeSectionConfigDto
 import org.jellyfin.sdk.model.api.HomeSectionDto
 import org.jellyfin.sdk.model.api.HomeSectionProviderDto
@@ -24,6 +25,12 @@ interface HomeSectionsRepository {
 	 * kept until [invalidate] is called.
 	 */
 	suspend fun getSections(): List<HomeSectionDto>
+
+	/**
+	 * The rows of the sections with these keys only, fetched fresh and not kept. For refreshing the
+	 * rows a change named without downloading the whole screen.
+	 */
+	suspend fun getSections(keys: Collection<String>): List<HomeSectionDto>
 
 	/**
 	 * Drop the cached sections so the next [getSections] call fetches again.
@@ -40,6 +47,18 @@ interface HomeSectionsRepository {
 	suspend fun getConfig(): List<HomeSectionConfigDto>
 	suspend fun updateConfig(sections: List<HomeSectionConfigDto>)
 	suspend fun resetConfig()
+
+	/**
+	 * Whether the item is a row on the home screen, or null when no list section takes its
+	 * kind, in which case it cannot be pinned at all.
+	 */
+	suspend fun isPinnedToHome(item: BaseItemDto): Boolean?
+
+	/**
+	 * Pins the item as the last row of its list section, or takes it off the home screen when
+	 * it is there already. Returns whether it is pinned afterwards.
+	 */
+	suspend fun toggleHomePin(item: BaseItemDto): Boolean
 }
 
 class HomeSectionsRepositoryImpl(
@@ -67,6 +86,9 @@ class HomeSectionsRepositoryImpl(
 		}
 	}
 
+	override suspend fun getSections(keys: Collection<String>): List<HomeSectionDto> =
+		api.homeSectionsApi.getHomeSections(itemLimit = itemLimit, keys = keys.toList()).content
+
 	override fun invalidate() {
 		sections = null
 	}
@@ -88,8 +110,23 @@ class HomeSectionsRepositoryImpl(
 		api.homeSectionsApi.resetHomeSectionConfig()
 	}
 
+	override suspend fun isPinnedToHome(item: BaseItemDto): Boolean? {
+		val provider = getProviders().pinProviderFor(item) ?: return null
+		return getConfig().isPinned(provider.key, item.id)
+	}
+
+	override suspend fun toggleHomePin(item: BaseItemDto): Boolean {
+		val provider = requireNotNull(getProviders().pinProviderFor(item)) { "Nothing on the home screen takes a ${item.type}" }
+		val layout = getConfig()
+		val pinned = layout.isPinned(provider.key, item.id)
+
+		updateConfig(if (pinned) layout.withItemUnpinned(provider.key, item.id) else layout.withItemPinned(provider.key, item.id))
+		return !pinned
+	}
+
 	companion object {
-		// Same amount the rows asked for before sections came from the server
-		private const val ITEM_LIMIT = 50
+		// About three screens of cards. The whole home screen is one response the box decodes at once,
+		// so every card counts: 50 a row made a 27 row layout 1.2 MB
+		private const val ITEM_LIMIT = 24
 	}
 }

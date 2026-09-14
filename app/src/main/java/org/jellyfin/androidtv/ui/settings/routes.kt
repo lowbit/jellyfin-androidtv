@@ -25,6 +25,8 @@ import org.jellyfin.androidtv.ui.settings.screen.home.SettingsHomeScreen
 import org.jellyfin.androidtv.ui.settings.screen.home.SettingsHomeSectionAddScreen
 import org.jellyfin.androidtv.ui.settings.screen.home.SettingsHomeSectionItemScreen
 import org.jellyfin.androidtv.ui.settings.screen.home.SettingsHomeSectionMaxItemsScreen
+import org.jellyfin.androidtv.ui.settings.screen.home.SettingsHomeSectionOrderItemScreen
+import org.jellyfin.androidtv.ui.settings.screen.home.SettingsHomeSectionOrderScreen
 import org.jellyfin.androidtv.ui.settings.screen.home.SettingsHomeSectionScreen
 import org.jellyfin.androidtv.ui.settings.screen.library.SettingsLibrariesDisplayGridScreen
 import org.jellyfin.androidtv.ui.settings.screen.library.SettingsLibrariesDisplayImageSizeScreen
@@ -91,6 +93,8 @@ object Routes {
 	const val HOME = "/home"
 	const val HOME_SECTION = "/home/section/{index}"
 	const val HOME_SECTION_MAX_ITEMS = "/home/section/{index}/max-items"
+	const val HOME_SECTION_ORDER = "/home/section/{index}/order"
+	const val HOME_SECTION_ORDER_ITEM = "/home/section/{index}/order/{itemId}"
 	const val HOME_SECTION_ADD = "/home/add"
 	const val HOME_SECTION_ADD_ITEM = "/home/add/{key}"
 	const val HOME_RESET = "/home/reset"
@@ -217,6 +221,12 @@ val routes = mapOf<String, RouteComposable>(
 	},
 	Routes.HOME_SECTION_MAX_ITEMS to { context ->
 		SettingsHomeSectionMaxItemsScreen(context.parameters["index"]?.toInt()!!)
+	},
+	Routes.HOME_SECTION_ORDER to { context ->
+		SettingsHomeSectionOrderScreen(context.parameters["index"]?.toInt()!!)
+	},
+	Routes.HOME_SECTION_ORDER_ITEM to { context ->
+		SettingsHomeSectionOrderItemScreen(context.parameters["index"]?.toInt()!!, context.parameters["itemId"]?.toUUIDOrNull()!!)
 	},
 	Routes.HOME_SECTION_ADD to {
 		SettingsHomeSectionAddScreen()

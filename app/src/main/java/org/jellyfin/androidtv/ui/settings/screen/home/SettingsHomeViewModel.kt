@@ -173,6 +173,7 @@ class SettingsHomeViewModel(
 
 	fun remove(index: Int) = save(state.value.sections.withoutSection(index))
 	fun move(index: Int, offset: Int) = save(state.value.sections.moved(index, offset))
+	fun moveItem(index: Int, itemId: UUID, offset: Int) = save(state.value.sections.withItemMoved(index, itemId, offset))
 	fun setActive(index: Int, active: Boolean) = save(state.value.sections.withActive(index, active))
 	fun setMaxItems(index: Int, maxItems: Int?) = save(state.value.sections.withMaxItems(index, maxItems))
 
@@ -232,6 +233,21 @@ fun List<HomeSectionConfigDto>.withItemToggled(key: String, itemId: UUID): List<
 
 fun List<HomeSectionConfigDto>.withItems(key: String, itemIds: List<UUID>): List<HomeSectionConfigDto> =
 	map { section -> if (section.key == key) section.copy(itemIds = itemIds) else section }
+
+/**
+ * Moves one item of a section that takes several up or down its rows, clamped to the ends, so
+ * a large offset means top or bottom.
+ */
+fun List<HomeSectionConfigDto>.withItemMoved(index: Int, itemId: UUID, offset: Int): List<HomeSectionConfigDto> {
+	val section = getOrNull(index) ?: return this
+	val from = section.itemIds.indexOf(itemId)
+	if (from < 0) return this
+	val to = (from + offset).coerceIn(section.itemIds.indices)
+	if (to == from) return this
+
+	val itemIds = section.itemIds.toMutableList().apply { add(to, removeAt(from)) }
+	return mapIndexed { i, s -> if (i == index) s.copy(itemIds = itemIds) else s }
+}
 
 fun List<HomeSectionConfigDto>.withoutSection(index: Int): List<HomeSectionConfigDto> =
 	filterIndexed { i, _ -> i != index }

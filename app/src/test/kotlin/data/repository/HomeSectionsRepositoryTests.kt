@@ -91,4 +91,25 @@ class HomeSectionsRepositoryTests : FunSpec({
 
 		requests.get() shouldBe 2
 	}
+
+	test("fetching some keys sends them and leaves the kept result alone") {
+		val queries = mutableListOf<Map<String, Any?>>()
+		val api = mockk<ApiClient> {
+			every { getOrCreateApi(HomeSectionsApi::class, any()) } answers { HomeSectionsApi(this@mockk) }
+			coEvery { request(any(), "/HomeSections", any(), any(), any()) } coAnswers {
+				queries += arg<Map<String, Any?>>(3)
+				RawResponse(body, 200, emptyMap())
+			}
+		}
+		val repository = HomeSectionsRepositoryImpl(api, scope = CoroutineScope(SupervisorJob() + Dispatchers.Default))
+
+		runBlocking {
+			repository.getSections()
+			repository.getSections(listOf("resume", "nextup"))
+			repository.getSections()
+		}
+
+		queries shouldHaveSize 2
+		(queries[1]["keys"] as Collection<*>).toList() shouldBe listOf("resume", "nextup")
+	}
 })
